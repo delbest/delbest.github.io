@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>코코팜 직교좌표 진자–스왈링–용승 시뮬레이션 RK4</title>
+<style>
+:root{color-scheme:dark;--bg:#101923;--panel:#182634;--line:#314657;--txt:#eaf2f7;--muted:#a9bac7;--cyan:#55d6e8;--orange:#ffb45e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1240px;margin:auto;padding:22px}h1{font-size:clamp(22px,3vw,30px);margin:0 0 5px}
+p{color:var(--muted);margin:4px 0 16px}.layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+canvas{display:block;width:100%;height:auto;aspect-ratio:760/570;background:linear-gradient(#142432,#0c1721);border-radius:10px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.metric{background:#101d28;border-radius:9px;padding:9px}.metric small{display:block;color:var(--muted);font-size:12px}.metric strong{font-size:17px;font-variant-numeric:tabular-nums}
+.controls{display:grid;gap:10px}.control{display:grid;grid-template-columns:1fr auto;gap:4px}.control label{color:#dce8ef}.control output{color:var(--cyan);font-variant-numeric:tabular-nums}
+input[type=range]{grid-column:1/3;width:100%;accent-color:var(--cyan)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}button{border:1px solid #486174;background:#243b4d;color:white;padding:9px 14px;border-radius:9px;cursor:pointer}button.primary{background:#087f91;border-color:#1598aa}
+.eq{font-family:ui-monospace,monospace;background:#101d28;padding:9px;border-radius:8px;overflow-wrap:anywhere;margin:7px 0;color:#d9f5f8}
+.note{font-size:13px;color:var(--muted);margin-top:12px}.diagnostic{margin-top:12px;padding:11px;border:1px solid #486174;border-radius:9px;background:#101d28;font-size:13px}.diagnostic strong{color:#ffd08a}.diagnostic pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#d6e5ed;margin:7px 0 0;font:12px/1.45 ui-monospace,monospace}.diagnostic.error{border-color:#d45c5c;background:#2a171b}.diagnostic.error strong{color:#ff9d9d}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:8px 0}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+@media(max-width:850px){.layout{grid-template-columns:1fr}main{padding:12px}.metrics{grid-template-columns:repeat(2,1fr)}}
+</style></head>
+<body><main>
+<h1>코코팜: 슬로싱–스왈링–용승 시뮬레이션</h1>
+<p>직교좌표 진자 운동방정식 · RK4 적분 · 길이 구속조건 적용 · 길이 cm · 시간 s</p>
+<div class="layout">
+<section class="panel">
+<canvas id="view" width="760" height="570"></canvas>
+<div class="legend">
+<span><i class="dot" style="background:#55d6e8"></i>진자 등가 질량중심</span>
+<span><i class="dot" style="background:#ffb45e"></i>제자리 용승 알갱이 군집</span>
+<span><i class="dot" style="background:#6ba9c9"></i>액체</span>
+</div>
+<div class="metrics">
+<div class="metric"><small>경과 시간</small><strong id="time">0.00 s</strong></div>
+<div class="metric"><small>z축 각운동량 Lz</small><strong id="lz">0.00 cm²/s</strong></div>
+<div class="metric"><small>수면까지 거리 ls</small><strong id="ls">0.00 cm</strong></div>
+<div class="metric"><small>군집 높이</small><strong id="zp">0.00 cm</strong></div>
+</div>
+<div class="actions">
+<button class="primary" id="toggle">일시정지</button><button id="reset">초기화</button>
+<button id="kickX">x 순간 가진</button><button id="kickY">y 순간 가진</button>
+</div>
+<div id="diagnostic" class="diagnostic"><strong>수치 진단: 정상</strong><div>RK4 중간 단계와 최종 상태의 유한성 검사 중</div></div>
+</section>
+<aside class="panel">
+<h2 style="font-size:18px;margin:0 0 10px">용기 및 수면 설정</h2>
+<div class="controls">
+<div class="control"><label>캔 직경</label><output>6.6 cm (고정)</output></div>
+<div class="control"><label for="water">수면 높이 h (캔 높이 고정)</label><output id="waterv"></output><input id="water" type="range" min="2" max="11" step=".1" value="7"></div>
+<div class="control"><label for="ax">진폭 Ax</label><output id="axv"></output><input id="ax" type="range" min="0" max="300" step="1" value="45"></div>
+<div class="control"><label for="fx">진동수 fx</label><output id="fxv"></output><input id="fx" type="range" min="0" max="6" step=".05" value="3.8"></div>
+<div class="control"><label for="ay">진폭 Ay</label><output id="ayv"></output><input id="ay" type="range" min="0" max="300" step="1" value="45"></div>
+<div class="control"><label for="fy">진동수 fy</label><output id="fyv"></output><input id="fy" type="range" min="0" max="6" step=".05" value="3.8"></div>
+<div class="control"><label for="phase">y축 위상차</label><output id="phasev"></output><input id="phase" type="range" min="-180" max="180" step="5" value="90"></div>
+<div class="control"><label for="asw">수면 용승 계수 as</label><output id="aswv"></output><input id="asw" type="range" min="0" max="100" step=".5" value="0.5"></div>
+<div class="control"><label for="damping">진자 감쇠 계수 γ</label><output id="dampingv"></output><input id="damping" type="range" min="0" max="5" step=".05" value="1.4"></div>
+<div class="control"><label for="drag">알갱이 군집 속도 저항 계수</label><output id="dragv"></output><input id="drag" type="range" min="0" max="5" step=".05" value="1"></div>
+</div>
+</aside></div>
+<section class="panel" style="margin-top:16px">
+<h2 style="font-size:18px;margin:0 0 10px">시뮬레이션에 사용된 수식</h2>
+<p>위치와 속도는 움직이는 가진점(캔)에 대한 상대값이며, 길이 단위는 cm, 시간 단위는 s이다.</p>
+<h3 style="font-size:15px;margin:14px 0 6px">1. 직교좌표 진자 운동</h3>
+<div class="eq">q = (x, y, z),　v = dq/dt,　x² + y² + z² = l²</div>
+<div class="eq">aₚ(t) = (Aₓ sin(2πfₓt), Aᵧ sin(2πfᵧt + φ), 0)</div>
+<div class="eq">vₜ = v − [(q · v) / (q · q)] q</div>
+<div class="eq">f = −aₚ − (0, 0, g) − γvₜ</div>
+<div class="eq">λ = [−(v · v) − (q · f)] / (q · q)</div>
+<div class="eq">d²q/dt² = f + λq</div>
+<p class="note">λ는 진자 길이 제약을 만족시키는 라그랑주 승수이며, vₜ는 진자 운동 방향에 수직인 반경 성분을 제거한 접선 속도이다. 이 미분방정식을 고정 시간 간격의 4차 룽게쿠타(RK4) 방법으로 적분하고, 매 스텝 위치와 속도를 길이 제약에 맞게 보정한다.</p>
+<h3 style="font-size:15px;margin:16px 0 6px">2. 각운동량과 알갱이 군집 용승</h3>
+<div class="eq">Lz = x·vᵧ − y·vₓ</div>
+<div class="eq">d = max(0.25, h − z꜀),　aᵤₚ = aₛ |Lz| / d</div>
+<div class="eq">dv꜀/dt = aᵤₚ − k(v꜀ + 0.33),　dz꜀/dt = v꜀</div>
+<p class="note">h는 수면 높이, z꜀와 v꜀는 알갱이 군집의 높이와 수직 속도이다. 군집은 초기 높이 1 cm에서 시작하며, 바닥과 수면을 넘지 않도록 제한한다. 이 용승식은 스월링 각운동량과 수면까지의 거리를 이용한 현상론적 근사 모델이다.</p>
+<h3 style="font-size:15px;margin:16px 0 6px">3. 기본 감쇠·용승 계수</h3>
+<div class="eq">수면 용승 계수 aₛ = 0.5 s⁻¹　|　진자 감쇠 계수 γ = 1.4 s⁻¹　|　군집 속도 저항 계수 k = 1.0 s⁻¹</div>
+<p class="note">위 값은 페이지를 처음 열었을 때 적용되는 초기 설정이며, 오른쪽 슬라이더로 변경할 수 있다.</p>
+</section></main>
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+ const cv=document.getElementById('view'), ctx=cv.getContext('2d');
+ const ids=['water','ax','fx','ay','fy','phase','asw','damping','drag'];
+ const el=Object.fromEntries(ids.map(id=>[id,document.getElementById(id)]));
+ const out=Object.fromEntries(ids.map(id=>[id,document.getElementById(id+'v')]));
+ const units={water:' cm',ax:' cm/s²',fx:' Hz',ay:' cm/s²',fy:' Hz',phase:'°',asw:' 1/s',damping:' 1/s',drag:' 1/s'};
+ const g=981,diameter=6.6,radius=diameter/2,canHeight=12,eps11=1.841,FIXED_DT=1/240;
+ let state,playing=true,last=0,simTime=0,accumulator=0,fault=null;
+ const diagnostic=document.getElementById('diagnostic');
+ function finite(a){return a.every(Number.isFinite)}
+ function params(){return Object.fromEntries(ids.map(id=>[id,+el[id].value]));}
+ function updateLabels(){ids.forEach(id=>out[id].textContent=(+el[id].value).toFixed(id==='water'?1:id==='phase'?0:2)+units[id]);}
+ function getLeff(h){const q=Math.max(.01,eps11*h/radius);return radius/(eps11*Math.max(.01,Math.tanh(q)));}
+ function pivotAccel(t,p){return [p.ax*Math.sin(2*Math.PI*p.fx*t),p.ay*Math.sin(2*Math.PI*p.fy*t+p.phase*Math.PI/180),0];}
+ function initialState(){const l=getLeff(params().water),x=.1;return {x,y:0,z:-Math.sqrt(l*l-x*x),vx:0,vy:0,vz:0,clusterZ:1,clusterVz:0,Lz:0};}
+ function fmt(v){return Number.isFinite(v)?v.toExponential(5):String(v)}
+ function reportFault(stage,vals,t,p,l){if(fault)return;fault={stage,time:t,vals:[...vals]};playing=false;diagnostic.className='diagnostic error';diagnostic.innerHTML='<strong>수치 이상 감지 — 시뮬레이션 정지</strong><pre>'+`단계: ${stage}
+시간: ${fmt(t)} s
+위치: (${fmt(state.x)}, ${fmt(state.y)}, ${fmt(state.z)}) cm
+속도: (${fmt(state.vx)}, ${fmt(state.vy)}, ${fmt(state.vz)}) cm/s
+검사값: [${vals.map(fmt).join(', ')}]
+L_eff: ${fmt(l)} cm
+Ax=${p.ax}, Ay=${p.ay}, fx=${p.fx}, fy=${p.fy}, γ=${p.damping}`+'</pre>';document.getElementById('toggle').textContent='오류 정지';}
+ // State vector q=[x,y,z,vx,vy,vz], measured from the moving pivot.
+ function derivative(q,t,p,l){
+   if(!finite(q)){reportFault('RK4 미분 입력',q,t,p,l);return Array(6).fill(NaN)}
+   const [x,y,z,vx,vy,vz]=q, r2=x*x+y*y+z*z;
+   if(!(r2>1e-14)){reportFault('진자 위치 벡터',q,t,p,l);return Array(6).fill(NaN)}
+   const [ax,ay]=pivotAccel(t,p), invr2=1/r2;
+   // Remove any tiny radial velocity component before applying isotropic tangential damping.
+   const rv=x*vx+y*vy+z*vz;
+   const vtx=vx-rv*x*invr2, vty=vy-rv*y*invr2, vtz=vz-rv*z*invr2;
+   const qx=-ax-p.damping*vtx, qy=-ay-p.damping*vty, qz=-g-p.damping*vtz;
+   // Lagrange multiplier enforces r·r_ddot = -|v|².
+   const lambda=(-(vx*vx+vy*vy+vz*vz)-(x*qx+y*qy+z*qz))*invr2;
+   const ans=[vx,vy,vz,qx+lambda*x,qy+lambda*y,qz+lambda*z];
+   if(!finite(ans))reportFault('RK4 미분 결과',ans,t,p,l);
+   return ans;
+ }
+ function add(a,b,k){return a.map((v,i)=>v+k*b[i]);}
+ function rk4(q,t,dt,p,l){
+   const k1=derivative(q,t,p,l);if(fault)return q;
+   const q2=add(q,k1,dt/2);if(!finite(q2)){reportFault('RK4 2단계 상태',q2,t+dt/2,p,l);return q;}
+   const k2=derivative(q2,t+dt/2,p,l);if(fault)return q;
+   const q3=add(q,k2,dt/2);if(!finite(q3)){reportFault('RK4 3단계 상태',q3,t+dt/2,p,l);return q;}
+   const k3=derivative(q3,t+dt/2,p,l);if(fault)return q;
+   const q4=add(q,k3,dt);if(!finite(q4)){reportFault('RK4 4단계 상태',q4,t+dt,p,l);return q;}
+   const k4=derivative(q4,t+dt,p,l);if(fault)return q;
+   const res=q.map((v,i)=>v+dt*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6);
+   if(!finite(res))reportFault('RK4 최종 상태',res,t+dt,p,l);
+   return fault?q:res;
+ }
+ // Project position onto the fixed-length sphere and velocity onto its tangent plane.
+ function projectConstraint(q,l){
+   let [x,y,z,vx,vy,vz]=q;const n=Math.hypot(x,y,z);
+   if(!(n>1e-12)||!Number.isFinite(n))return null;
+   x*=l/n;y*=l/n;z*=l/n;
+   const rv=(x*vx+y*vy+z*vz)/(l*l);vx-=rv*x;vy-=rv*y;vz-=rv*z;
+   // Approximate cylindrical wall contact, retaining the lower-hemisphere branch.
+   const rmax=Math.min(radius*.70,l*.999),rho=Math.hypot(x,y);
+   if(rho>rmax){const nx=x/rho,ny=y/rho;x=nx*rmax;y=ny*rmax;z=-Math.sqrt(Math.max(0,l*l-rmax*rmax));const outward=vx*nx+vy*ny;if(outward>0){vx-=outward*nx;vy-=outward*ny;}const rr=(x*vx+y*vy+z*vz)/(l*l);vx-=rr*x;vy-=rr*y;vz-=rr*z;}
+   return [x,y,z,vx,vy,vz];
+ }
+ function step(dt){const p=params(),l=getLeff(p.water),n=Math.max(1,Math.ceil(dt/.002)),h=dt/n;
+   for(let i=0;i<n;i++){if(fault)return;let q=[state.x,state.y,state.z,state.vx,state.vy,state.vz];q=rk4(q,simTime,h,p,l);if(fault)return;q=projectConstraint(q,l);if(!q||!finite(q)){reportFault('길이 구속 투영',q||[],simTime,p,l);return;}
+     [state.x,state.y,state.z,state.vx,state.vy,state.vz]=q;
+     state.Lz=state.x*state.vy-state.y*state.vx;
+     const gap=Math.max(.25,p.water-state.clusterZ),aUp=p.asw*Math.abs(state.Lz)/gap;
+     state.clusterVz+=(aUp-p.drag*(state.clusterVz+.33))*h;state.clusterZ+=state.clusterVz*h;
+     if(state.clusterZ<.5){state.clusterZ=.5;if(state.clusterVz<0)state.clusterVz=0;}
+     if(state.clusterZ>p.water){state.clusterZ=p.water;if(state.clusterVz>0)state.clusterVz=0;}
+     if(!finite([state.Lz,state.clusterVz,state.clusterZ])){reportFault('각운동량/군집 계산',[state.Lz,state.clusterVz,state.clusterZ],simTime,p,l);return;}
+     simTime+=h;
+   }
+ }
+ function project(x,y,z){const s=30,cx=380,b=470;return [cx+x*s,b-z*s-y*s*.35];}
+ function draw(){const p=params(),s=state,h=p.water,l=getLeff(h);ctx.clearRect(0,0,760,570);
+   const bottom=project(0,0,0),lt=project(-radius,0,canHeight),rt=project(radius,0,canHeight),lb=project(-radius,0,0),rb=project(radius,0,0);
+   ctx.beginPath();ctx.moveTo(lt[0],lt[1]);ctx.lineTo(lb[0],lb[1]);ctx.ellipse(380,bottom[1],radius*30,radius*10,0,Math.PI,0,true);ctx.lineTo(rt[0],rt[1]);ctx.strokeStyle='#a9c1d0';ctx.lineWidth=3;ctx.stroke();
+   // Dynamic free surface: retain the previous sloshing visualization,
+   // using the pendulum bob's horizontal displacement as the surface-tilt proxy.
+   const slopeScale=Math.max(1,h*.6);
+   const zsurf=(x,y)=>h+(s.x*x-s.y*y*.4)/slopeScale;
+   const waterPts=[];
+   for(let i=0;i<=120;i++){
+     const a=2*Math.PI*i/120;
+     const x=radius*.98*Math.cos(a), y=radius*.98*Math.sin(a);
+     waterPts.push(project(x,y,zsurf(x,y)));
+   }
+   ctx.beginPath();
+   waterPts.forEach((pt,i)=>{if(i===0)ctx.moveTo(pt[0],pt[1]);else ctx.lineTo(pt[0],pt[1]);});
+   ctx.closePath();
+   ctx.fillStyle='rgba(77,180,215,.35)';ctx.fill();
+   ctx.strokeStyle='#68d0e8';ctx.lineWidth=2;ctx.stroke();
+   const pivot=project(0,0,h),bob=project(s.x,s.y,h+s.z);ctx.beginPath();ctx.moveTo(pivot[0],pivot[1]);ctx.lineTo(bob[0],bob[1]);ctx.strokeStyle='#d5e7f0';ctx.lineWidth=2;ctx.stroke();ctx.beginPath();ctx.arc(bob[0],bob[1],8,0,Math.PI*2);ctx.fillStyle='#55d6e8';ctx.fill();
+   const cr=radius*.48,center=project(0,0,s.clusterZ);for(let i=0;i<38;i++){const a=i*2.399963,rr=cr*(.18+.82*Math.sqrt((i%19)/18)),pt=project(Math.cos(a)*rr,Math.sin(a)*rr,s.clusterZ+Math.sin(i*1.7+simTime*2.1)*.055);ctx.beginPath();ctx.arc(pt[0],pt[1],3.5+(i%3)*.8,0,Math.PI*2);ctx.fillStyle=i%3===0?'#ffd08a':'#ffad55';ctx.fill();}
+   const gx=585,gy=470,sc=30;ctx.strokeStyle='rgba(190,210,222,.4)';ctx.beginPath();ctx.moveTo(gx,gy);ctx.lineTo(gx,gy-canHeight*sc);ctx.stroke();for(let z=0;z<=canHeight;z+=2){const yy=gy-z*sc;ctx.beginPath();ctx.moveTo(gx-5,yy);ctx.lineTo(gx+5,yy);ctx.stroke();ctx.fillStyle='#b9cad5';ctx.font='11px system-ui';ctx.fillText(String(z),gx+10,yy+4);}const sy=gy-h*sc,zy=gy-s.clusterZ*sc;ctx.strokeStyle='#55d6e8';ctx.beginPath();ctx.moveTo(gx-9,sy);ctx.lineTo(gx+9,sy);ctx.stroke();ctx.strokeStyle='#ffb45e';ctx.beginPath();ctx.moveTo(gx-9,zy);ctx.lineTo(gx+9,zy);ctx.stroke();
+   document.getElementById('time').textContent=simTime.toFixed(2)+' s';document.getElementById('lz').textContent=s.Lz.toFixed(3)+' cm²/s';document.getElementById('ls').textContent=Math.max(0,h-s.clusterZ).toFixed(3)+' cm';document.getElementById('zp').textContent=s.clusterZ.toFixed(3)+' cm';
+ }
+ function reset(){state=initialState();simTime=0;accumulator=0;last=0;fault=null;playing=true;document.getElementById('toggle').textContent='일시정지';diagnostic.className='diagnostic';diagnostic.innerHTML='<strong>수치 진단: 정상</strong><div>직교좌표 RK4 단계 및 진자 길이 구속 오차 검사 중</div>';draw();}
+ ids.forEach(id=>el[id].addEventListener('input',()=>{updateLabels();if(id==='water'&&state){state.clusterZ=Math.min(state.clusterZ,+el.water.value);state.clusterZ=Math.max(.5,state.clusterZ);draw();}}));updateLabels();
+ function frame(ts){if(!last)last=ts;const elapsed=Math.min((ts-last)/1000,.05);last=ts;if(playing){accumulator+=elapsed;let count=0;while(accumulator>=FIXED_DT&&count<12&&!fault){step(FIXED_DT);accumulator-=FIXED_DT;count++;}draw();}requestAnimationFrame(frame);}
+ document.getElementById('toggle').onclick=()=>{if(fault)return;playing=!playing;document.getElementById('toggle').textContent=playing?'일시정지':'재생';last=0;};document.getElementById('reset').onclick=reset;
+ document.getElementById('kickX').onclick=()=>{if(fault)return;state.vx+=35;const q=projectConstraint([state.x,state.y,state.z,state.vx,state.vy,state.vz],getLeff(params().water));[state.x,state.y,state.z,state.vx,state.vy,state.vz]=q;draw();};
+ document.getElementById('kickY').onclick=()=>{if(fault)return;state.vy+=35;const q=projectConstraint([state.x,state.y,state.z,state.vx,state.vy,state.vz],getLeff(params().water));[state.x,state.y,state.z,state.vx,state.vy,state.vz]=q;draw();};
+ reset();requestAnimationFrame(frame);
+});
+</script></body></html>
